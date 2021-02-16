@@ -1,8 +1,11 @@
 (setq lexical-binding t)
 
 ;; Could use point
-(defun mines-make-field (py px)
-  (let ((field (make-bool-vector (* mines-max-y mines-max-x) nil))
+(defun mines-make-field ()
+  (let* ((point-y-x (mines-bufpos-to-2d (point)))
+         (py (car point-y-x))
+         (px (cdr point-y-x))
+         (field (make-bool-vector (* mines-max-y mines-max-x) nil))
          (yx (* mines-max-y mines-max-x)))
     ;; Put mines in start of array
     (dotimes (i mines-mine-num)
@@ -37,15 +40,19 @@
 (defun mines-2d-to-bufpos (y x)
   (+ x (* y (+ 1 mines-max-x)) 1))
 
+;; Should it use (plist-get 'arr)?
 (defun mines-aset (field y x newelt)
   (aset (plist-get field 'arr) (mines-2d-to-arrpos y x) newelt))
 
+;; Should it use (plist-get 'arr)?
 (defun mines-aref (field y x)
   (aref (plist-get field 'arr) (mines-2d-to-arrpos y x)))
 
-;; Uses 2d coords
-(defun mines-neighbor-indices (board y x)
-  (let* ((yp (+ y 1)) (ym (- y 1))
+(defun mines-neighbor-indices ()
+  (let* ((point-y-x (mines-bufpos-to-2d (point)))
+         (y (car point-y-x))
+         (x (cdr point-y-x))
+         (yp (+ y 1)) (ym (- y 1))
          (xp (+ x 1)) (xm (- x 1))
          (all-indices `((,ym . ,xm) (,ym . ,x) (,ym . ,xp)
                         (,y . ,xm) (,y . ,xp)
@@ -54,9 +61,8 @@
                                    (< -1 (cdr elt) mines-max-x)))
                 all-indices)))
 
-;; transitively uses 2d
-(defun mines-neighbor-count (y x)
-  (let* ((indices (mines-neighbor-indices mines-board y x))
+(defun mines-neighbor-count ()
+  (let* ((indices (mines-neighbor-indices))
          (mine-list (mapcar (lambda (elt) (mines-aref mines-board (car elt) (cdr elt))) indices))
          (valid-mines (seq-filter (lambda (elt) elt) mine-list)))
     (length valid-mines)))
@@ -101,14 +107,13 @@
 
 ;; needs 1d
 (defun mines-sweep-empty ()
-  ;; Point might be different than (y,x), so can't use char-after
   (let ((buffer-read-only nil)
         (yx (mines-bufpos-to-2d (point))))
     (save-excursion
       (delete-char 1)
       (let ((retval (if (mines-aref mines-board (car yx) (cdr yx))
                         mines-bomb-char
-                      (mines-neighbor-count (car yx) (cdr yx)))))
+                      (mines-neighbor-count))))
         (insert (cond ((equal retval mines-bomb-char) mines-bomb-char)
                       ((equal retval 0) mines-zero-char)
                       (t (+ 48 retval))))
@@ -131,17 +136,21 @@
         (goto-char (mines-2d-to-bufpos y x))
         (when (char-equal mines-empty-char (char-after))
           (when (= 0 (mines-sweep-empty))
-            (setq indices (append (mines-neighbor-indices mines-board y x) indices))))))
+            (setq indices (append (mines-neighbor-indices) indices))))))
     (goto-char saved-point)))
 
-(defun mines-sweep-neighbors (y x)
+;; (defun mines-reduce-neighbors (f ns init-val)
+;;   (let ((indices (mines-neighbor-indices)))))
+
+(defun mines-sweep-neighbors ()
   (let* ((saved-point (point))
-         (indices (mines-neighbor-indices mines-board y x))
+         (indices (mines-neighbor-indices))
          (flag-count (seq-reduce (lambda (acc elt)
                                    (goto-char (mines-2d-to-bufpos (car elt) (cdr elt)))
                                    (+ acc (if (equal (char-after) mines-flag-char) 1 0)))
                                  indices 0)))
-    (if (= flag-count (mines-neighbor-count y x))
+    (goto-char saved-point)
+    (if (= flag-count (mines-neighbor-count))
         (mapcar (lambda (elt)
                   (goto-char (mines-2d-to-bufpos (car elt) (cdr elt)))
                   (mines-sweep-empties))
@@ -150,14 +159,12 @@
 
 (defun mines-sweep ()
   (interactive)
-  (destructuring-bind
-      (y . x) (mines-bufpos-to-2d (point))
-    (unless (plist-get mines-board 'arr)
-      (mines-make-field y x)
-      (setq mines-start-time (current-time)))
-    (cond
-     ((equal (char-after) mines-empty-char) (mines-sweep-empties))
-     ((<= #x31 (char-after) #x39) (mines-sweep-neighbors y x)))))
+  (unless (plist-get mines-board 'arr)
+    (mines-make-field)
+    (setq mines-start-time (current-time)))
+  (cond
+   ((equal (char-after) mines-empty-char) (mines-sweep-empties))
+   ((<= #x31 (char-after) #x39) (mines-sweep-neighbors))))
 
 (defun mines-flag ()
   (interactive)
