@@ -1,10 +1,8 @@
 (setq lexical-binding t)
 
-;; Could use point
 (defun mines-make-field ()
-  (let* ((point-y-x (mines-bufpos-to-2d (point)))
-         (py (car point-y-x))
-         (px (cdr point-y-x))
+  (let* ((py (mines-point-y))
+         (px (mines-point-x))
          (field (make-bool-vector (* mines-max-y mines-max-x) nil))
          (yx (* mines-max-y mines-max-x)))
     ;; Put mines in start of array
@@ -28,14 +26,17 @@
       (aset field last tmp)
       mines-board)))
 
+(defun mines-point-y ()
+  (/ (- (point) 1) (+ mines-max-x 1)))
+
+(defun mines-point-x ()
+  (mod (- (point) 1) (+ mines-max-x 1)))
+;; Could use point
+
 (defun mines-2d-to-arrpos (y x)
   (+ (* y mines-max-x) x))
 
 ;; adds one to max-x to account for newlines before point in the buffer
-(defun mines-bufpos-to-2d (p)
-  (let ((x+1 (+ 1 mines-max-x))
-        (p-1 (- p 1)))
-    (cons (/ p-1 x+1) (mod p-1 x+1))))
 
 (defun mines-2d-to-bufpos (y x)
   (+ x (* y (+ 1 mines-max-x)) 1))
@@ -45,18 +46,20 @@
   (aset (plist-get field 'arr) (mines-2d-to-arrpos y x) newelt))
 
 ;; Should it use (plist-get 'arr)?
+
 (defun mines-aref (field y x)
   (aref (plist-get field 'arr) (mines-2d-to-arrpos y x)))
 
 (defun mines-neighbor-indices ()
-  (let* ((point-y-x (mines-bufpos-to-2d (point)))
-         (y (car point-y-x))
-         (x (cdr point-y-x))
+  (let* ((y (mines-point-y))
+         (x (mines-point-x))
          (yp (+ y 1)) (ym (- y 1))
          (xp (+ x 1)) (xm (- x 1))
          (all-indices `((,ym . ,xm) (,ym . ,x) (,ym . ,xp)
                         (,y . ,xm) (,y . ,xp)
                         (,yp . ,xm) (,yp . ,x) (,yp . ,xp))))
+
+
     (seq-filter (lambda (elt) (and (< -1 (car elt) mines-max-y)
                                    (< -1 (cdr elt) mines-max-x)))
                 all-indices)))
@@ -107,11 +110,10 @@
 
 ;; needs 1d
 (defun mines-sweep-empty ()
-  (let ((buffer-read-only nil)
-        (yx (mines-bufpos-to-2d (point))))
+  (let ((buffer-read-only nil))
     (save-excursion
       (delete-char 1)
-      (let ((retval (if (mines-aref mines-board (car yx) (cdr yx))
+      (let ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
                         mines-bomb-char
                       (mines-neighbor-count))))
         (insert (cond ((equal retval mines-bomb-char) mines-bomb-char)
@@ -128,8 +130,7 @@
 (defun mines-sweep-empties ()
   ;; Deletes characters so save-excursion doesn't work properly
   (let* ((saved-point (point))
-         (yx (mines-bufpos-to-2d saved-point))
-         (indices `((,(car yx) . ,(cdr yx)))))
+         (indices `((,(mines-point-y) . ,(mines-point-x)))))
     (while (consp indices)
       (destructuring-bind (y . x) (car indices)
         (setq indices (cdr indices))
