@@ -1,5 +1,12 @@
 (setq lexical-binding t)
 
+(defmacro mines-save-point (&rest excursion)
+  (let ((saved-point (make-symbol "saved-point")))
+    `(let ((,saved-point (point))
+           (retval ,(cons 'progn excursion)))
+       (goto-char ,saved-point)
+       retval)))
+
 (defun mines-make-field ()
   (let* ((py (mines-point-y))
          (px (mines-point-x))
@@ -72,18 +79,16 @@
 
 ;; untested
 (defun mines-map-neighbors (f)
-  (let* ((saved-point (point))
-         (acclist nil))
-    (mines-do-neighbors (setq acclist (cons (funcall f) acclist)))
-    (goto-char saved-point)
-    (reverse retlist)))
+  (mines-save-point
+   (let ((acclist nil))
+     (mines-do-neighbors (setq acclist (cons (funcall f) acclist)))
+     (reverse acclist))))
 
 (defun mines-reduce-neighbors (f initval)
-  (let* ((saved-point (point))
-         (acc initval))
-    (mines-do-neighbors (setq acc (funcall f acc)))
-    (goto-char saved-point)
-    acc))
+  (mines-save-point
+   (let ((acc initval))
+     (mines-do-neighbors (setq acc (funcall f acc)))
+     acc)))
 
 (defun mines-neighbor-count ()
   (mines-reduce-neighbors
@@ -93,7 +98,7 @@
    0))
 
 (defun mines-draw-field ()
-  (save-excursion
+  (mines-save-point
     (let ((buffer-read-only nil))
       (dotimes (i (* mines-max-y mines-max-x))
         (if (and (/= 0 i) (= 0 (mod i mines-max-x)))
@@ -151,34 +156,27 @@
 
 (defun mines-sweep-empties ()
   ;; Deletes characters so save-excursion doesn't work properly
-  (let* ((saved-point (point))
-         (indices `((,(mines-point-y) . ,(mines-point-x)))))
-    (while (consp indices)
-      (destructuring-bind (y . x) (car indices)
-        (setq indices (cdr indices))
-        (goto-char (mines-2d-to-bufpos y x))
-        (when (char-equal mines-empty-char (char-after))
-          (when (= 0 (mines-sweep-empty))
-            (setq indices (append (mines-neighbor-indices) indices))))))
-    (goto-char saved-point)))
+  (mines-save-point
+   (let ((indices `((,(mines-point-y) . ,(mines-point-x)))))
+     (while (consp indices)
+       (destructuring-bind (y . x) (car indices)
+         (setq indices (cdr indices))
+         (goto-char (mines-2d-to-bufpos y x))
+         (when (char-equal mines-empty-char (char-after))
+           (when (= 0 (mines-sweep-empty))
+             (setq indices (append (mines-neighbor-indices) indices)))))))))
 
 ;; (defun mines-reduce-neighbors (f ns init-val)
 ;;   (let ((indices (mines-neighbor-indices)))))
 
 (defun mines-sweep-neighbors ()
-  (let* ((saved-point (point))
-         (indices (mines-neighbor-indices))
-         (flag-count (seq-reduce (lambda (acc elt)
-                                   (goto-char (mines-2d-to-bufpos (car elt) (cdr elt)))
-                                   (+ acc (if (equal (char-after) mines-flag-char) 1 0)))
-                                 indices 0)))
-    (goto-char saved-point)
-    (if (= flag-count (mines-neighbor-count))
-        (mapcar (lambda (elt)
-                  (goto-char (mines-2d-to-bufpos (car elt) (cdr elt)))
-                  (mines-sweep-empties))
-                indices))
-    (goto-char saved-point)))
+  (mines-save-point
+   (let ((flag-count (mines-reduce-neighbors
+                      (lambda (acc)
+                        (+ acc (if (equal (char-after) mines-flag-char) 1 0)))
+                      0)))
+     (if (= flag-count (mines-neighbor-count))
+         (mines-map-neighbors #'mines-sweep-empties)))))
 
 (defun mines-sweep ()
   (interactive)
@@ -191,19 +189,18 @@
 
 (defun mines-flag ()
   (interactive)
-  (let ((buffer-read-only nil)
-        (saved-point (point))
-        (char (char-after)))
-    (cond
-     ((equal char mines-empty-char)
-      (delete-char 1)
-      (insert mines-flag-char)
-      (put-text-property saved-point (+ saved-point 1) 'font-lock-face 'mines-flag))
-     ((equal char mines-flag-char)
-      (delete-char 1)
-      (insert mines-empty-char)
-      (put-text-property saved-point (+ saved-point 1) 'font-lock-face 'mines-empty)))
-    (goto-char saved-point)))
+  (mines-save-point
+   (let ((buffer-read-only nil)
+         (char (char-after)))
+     (cond
+      ((equal char mines-empty-char)
+       (delete-char 1)
+       (insert mines-flag-char)
+       (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-flag))
+      ((equal char mines-flag-char)
+       (delete-char 1)
+       (insert mines-empty-char)
+       (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-empty))))))
 
 (defvar mines-mode-map
   (let ((map (make-sparse-keymap)))
