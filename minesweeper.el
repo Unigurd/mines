@@ -64,11 +64,33 @@
                                    (< -1 (cdr elt) mines-max-x)))
                 all-indices)))
 
+(defmacro mines-do-neighbors (&rest body)
+  (let ((yx (make-symbol "yx")))
+    (append `(dolist (,yx (mines-neighbor-indices))
+               (goto-char (mines-2d-to-bufpos (car ,yx) (cdr ,yx))))
+            body)))
+
+;; untested
+(defun mines-map-neighbors (f)
+  (let* ((saved-point (point))
+         (acclist nil))
+    (mines-do-neighbors (setq acclist (cons (funcall f) acclist)))
+    (goto-char saved-point)
+    (reverse retlist)))
+
+(defun mines-reduce-neighbors (f initval)
+  (let* ((saved-point (point))
+         (acc initval))
+    (mines-do-neighbors (setq acc (funcall f acc)))
+    (goto-char saved-point)
+    acc))
+
 (defun mines-neighbor-count ()
-  (let* ((indices (mines-neighbor-indices))
-         (mine-list (mapcar (lambda (elt) (mines-aref mines-board (car elt) (cdr elt))) indices))
-         (valid-mines (seq-filter (lambda (elt) elt) mine-list)))
-    (length valid-mines)))
+  (mines-reduce-neighbors
+   (lambda (acc)
+     (+ acc (if (mines-aref mines-board (mines-point-y) (mines-point-x))
+                1 0)))
+   0))
 
 (defun mines-draw-field ()
   (save-excursion
