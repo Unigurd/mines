@@ -18,27 +18,42 @@
   (let* ((py (mines-point-y))
          (px (mines-point-x))
          (field (make-bool-vector (* mines-max-y mines-max-x) nil))
-         (yx (* mines-max-y mines-max-x)))
+         (yx (* mines-max-y mines-max-x))
+         (neighbors (if (eq mines-start 'safe-neighbors)
+                        (mines-neighbor-indices) nil))
+         (section2 (length neighbors))
+         (section1 (- yx section2 1)))
     ;; Put mines in start of array
     (dotimes (i mines-mine-num)
       (aset field i t))
-    ;; Scatter the mines randomly
-    ;; Last elt of array untouched
-    (dotimes (i (- yx 1))
-      (let* ((r (mod (+ i (random (- yx i 1))) yx))
+    ;; Scatter the mines randomly but don't move mines to the last spaces
+    (dotimes (i section1)
+      (let* ((r (+ i (random (- section1 i))))
              (tmp (aref field i)))
         (aset field i (aref field r))
         (aset field r tmp)))
+    ;; exchange the neighbors with some of the last mine-free spaces
+    (seq-reduce
+     (lambda (i elm)
+       (let* ((idx (+ i section1))
+              (tmp (aref field idx))
+              (neighbor (mines-2d-to-arrpos (car elm) (cdr elm))))
+         (aset field idx (aref field neighbor))
+         (aset field neighbor tmp)
+         (1+ i)))
+     neighbors 0)
+    ;; Start-position and last elt switched to make sure first click
+    ;; isn't a mine
+    (let* ((pos (mines-2d-to-arrpos py px))
+           (tmp (aref field pos))
+           (last (- (* mines-max-y mines-max-x) 1)))
+
+      (aset field pos (aref field last))
+      (aset field last tmp)
+      mines-board)
     (setq mines-board (plist-put (plist-put mines-board 'arr field)
                                  'saved-pos
-                                 (mines-2d-to-bufpos py px)))
-    (let* ((tmp (mines-aref mines-board py px))
-           (last (- (* mines-max-y mines-max-x) 1)))
-      ;; Start-position and last elt switched to make sure first click
-      ;; isn't a mine
-      (mines-aset mines-board py px (aref field last))
-      (aset field last tmp)
-      mines-board)))
+                                 (mines-2d-to-bufpos py px)))))
 
 (defun mines-point-y ()
   (/ (- (point) 1) (+ mines-max-x 1)))
@@ -237,7 +252,7 @@
   (set (make-local-variable 'mines-bomb-char) ?X)
   (set (make-local-variable 'mines-flag-char) ?f)
   (set (make-local-variable 'mines-remaining-mines) nil)
-  (set (make-local-variable 'mines-starting-press) 'safe-neighbors)
+  (set (make-local-variable 'mines-start) 'safe-neighbors)
   (make-local-variable 'mines-start-time))
 
 (defun minesweeper ()
