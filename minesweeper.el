@@ -178,7 +178,9 @@
   (mines-save-excursion
    (let ((flag-count (mines-reduce-neighbors
                       (lambda (acc)
-                        (+ acc (if (equal (char-after) mines-flag-char) 1 0)))
+                        (+ acc (if (or (equal (char-after) mines-flag-char)
+                                       (equal (char-after) mines-bomb-char))
+                                   1 0)))
                       0)))
      (if (= flag-count (mines-neighbor-count))
          (mines-map-neighbors #'mines-sweep-empties)))))
