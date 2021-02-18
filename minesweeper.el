@@ -1,14 +1,14 @@
 (setq lexical-binding t)
 
-(defmacro mines-save-point (&rest excursion)
+(defmacro mines-save-excursion (&rest excursion)
   (let ((saved-point (make-symbol "saved-point")))
     `(let ((,saved-point (point))
-           (retval ,(cons 'progn excursion)))
+           (retval ,(cons 'save-current-buffer excursion)))
        (goto-char ,saved-point)
        retval)))
 
 (defun mines-replace-char (char face)
-  (mines-save-point
+  (mines-save-excursion
    (delete-char 1)
    (insert char)
    (put-text-property (- (point) 1) (point) 'font-lock-face face)))
@@ -85,13 +85,13 @@
 
 ;; untested
 (defun mines-map-neighbors (f)
-  (mines-save-point
+  (mines-save-excursion
    (let ((acclist nil))
      (mines-do-neighbors (setq acclist (cons (funcall f) acclist)))
      (reverse acclist))))
 
 (defun mines-reduce-neighbors (f initval)
-  (mines-save-point
+  (mines-save-excursion
    (let ((acc initval))
      (mines-do-neighbors (setq acc (funcall f acc)))
      acc)))
@@ -104,7 +104,7 @@
    0))
 
 (defun mines-draw-field ()
-  (mines-save-point
+  (mines-save-excursion
     (let ((buffer-read-only nil))
       (dotimes (i (* mines-max-y mines-max-x))
         (if (and (/= 0 i) (= 0 (mod i mines-max-x)))
@@ -144,7 +144,7 @@
 ;; needs 1d
 (defun mines-sweep-empty ()
   (let ((buffer-read-only nil))
-    (mines-save-point
+    (mines-save-excursion
       (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
                          mines-bomb-char
                        (mines-neighbor-count)))
@@ -161,7 +161,7 @@
 
 (defun mines-sweep-empties ()
   ;; Deletes characters so save-excursion doesn't work properly
-  (mines-save-point
+  (mines-save-excursion
    (let ((indices `((,(mines-point-y) . ,(mines-point-x)))))
      (while (consp indices)
        (destructuring-bind (y . x) (car indices)
@@ -175,7 +175,7 @@
 ;;   (let ((indices (mines-neighbor-indices)))))
 
 (defun mines-sweep-neighbors ()
-  (mines-save-point
+  (mines-save-excursion
    (let ((flag-count (mines-reduce-neighbors
                       (lambda (acc)
                         (+ acc (if (equal (char-after) mines-flag-char) 1 0)))
@@ -194,7 +194,7 @@
 
 (defun mines-flag ()
   (interactive)
-  (mines-save-point
+  (mines-save-excursion
    (let ((buffer-read-only nil)
          (char (char-after)))
      (cond
