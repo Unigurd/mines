@@ -9,9 +9,10 @@
 
 (defun mines-replace-char (char face)
   (mines-save-excursion
-   (delete-char 1)
-   (insert char)
-   (put-text-property (- (point) 1) (point) 'font-lock-face face)))
+   (let ((buffer-read-only nil))
+     (delete-char 1)
+     (insert char)
+     (put-text-property (- (point) 1) (point) 'font-lock-face face))))
 
 (defun mines-make-field ()
   (let* ((py (mines-point-y))
@@ -79,11 +80,11 @@
 
 (defmacro mines-do-neighbors (&rest body)
   (let ((yx (make-symbol "yx")))
-    (append `(dolist (,yx (mines-neighbor-indices))
-               (goto-char (mines-2d-to-bufpos (car ,yx) (cdr ,yx))))
-            body)))
+    `(mines-save-excursion
+      (dolist (,yx (mines-neighbor-indices))
+        (goto-char (mines-2d-to-bufpos (car ,yx) (cdr ,yx)))
+        ,(cons 'progn body)))))
 
-;; untested
 (defun mines-map-neighbors (f)
   (mines-save-excursion
    (let ((acclist nil))
@@ -105,7 +106,7 @@
 
 (defun mines-draw-field ()
   (mines-save-excursion
-    (let ((buffer-read-only nil))
+   (let ((buffer-read-only nil))
       (dotimes (i (* mines-max-y mines-max-x))
         (if (and (/= 0 i) (= 0 (mod i mines-max-x)))
             (newline))
@@ -141,26 +142,19 @@
   (mines-retry t)
   (plist-put mines-board 'arr nil))
 
-;; needs 1d
 (defun mines-sweep-empty ()
-  (let ((buffer-read-only nil))
-    (mines-save-excursion
-      (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
-                         mines-bomb-char
-                       (mines-neighbor-count)))
-             (char (cond ((equal retval mines-bomb-char) mines-bomb-char)
-                         ((equal retval 0) mines-zero-char)
-                         (t (+ 48 retval))))
-             (face (if (eq retval mines-bomb-char) 'mines-bomb 'mines-num)))
-        (mines-replace-char char face)
-        retval))))
-
-;; ((= new-char mines-bomb-char)
-;; (princ (format-time-string "%s.%2N"
-;;                            (time-subtract
+  (mines-save-excursion
+   (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
+                      mines-bomb-char
+                    (mines-neighbor-count)))
+          (char (cond ((equal retval mines-bomb-char) mines-bomb-char)
+                      ((equal retval 0) mines-zero-char)
+                      (t (+ 48 retval))))
+          (face (if (eq retval mines-bomb-char) 'mines-bomb 'mines-num)))
+     (mines-replace-char char face)
+     retval)))
 
 (defun mines-sweep-empties ()
-  ;; Deletes characters so save-excursion doesn't work properly
   (mines-save-excursion
    (let ((indices `((,(mines-point-y) . ,(mines-point-x)))))
      (while (consp indices)
@@ -171,8 +165,6 @@
            (when (= 0 (mines-sweep-empty))
              (setq indices (append (mines-neighbor-indices) indices)))))))))
 
-;; (defun mines-reduce-neighbors (f ns init-val)
-;;   (let ((indices (mines-neighbor-indices)))))
 
 (defun mines-sweep-neighbors ()
   (mines-save-excursion
@@ -194,14 +186,33 @@
    ((equal (char-after) mines-empty-char) (mines-sweep-empties))
    ((<= #x31 (char-after) #x39) (mines-sweep-neighbors))))
 
+(defun mines-flag-single (&optional on-off)
+  (interactive)
+  (mines-save-excursion
+   (let ((char (char-after)))
+     (cond
+      ((and (equal char mines-empty-char) (not (equal on-off 'off)))
+       (mines-replace-char mines-flag-char 'mines-flag))
+      ((and (equal char mines-flag-char) (not (equal on-off 'on)))
+       (mines-replace-char mines-empty-char 'mines-empty))))))
+
 (defun mines-flag ()
   (interactive)
   (mines-save-excursion
-   (let ((buffer-read-only nil)
-         (char (char-after)))
-     (cond
-      ((equal char mines-empty-char) (mines-replace-char mines-flag-char 'mines-flag))
-      ((equal char mines-flag-char) (mines-replace-char mines-empty-char 'mines-empty))))))
+   (cond
+    ((or (equal (char-after) mines-empty-char)
+         (equal (char-after) mines-flag-char))
+     (mines-flag-single))
+    ((<= 49 (char-after) 57)
+     (let ((empties 0)
+           (toggle 'on))
+       (mines-do-neighbors
+        (princ (point))
+        (when (equal (char-after) mines-empty-char)
+          (setq empties (+ 1 empties))))
+       (when (= 0 empties) (setq toggle 'off))
+       (mines-do-neighbors
+        (mines-flag-single toggle)))))))
 
 (defvar mines-mode-map
   (let ((map (make-sparse-keymap)))
@@ -226,6 +237,7 @@
   (set (make-local-variable 'mines-bomb-char) ?X)
   (set (make-local-variable 'mines-flag-char) ?f)
   (set (make-local-variable 'mines-remaining-mines) nil)
+  (set (make-local-variable 'mines-starting-press) 'safe-neighbors)
   (make-local-variable 'mines-start-time))
 
 (defun minesweeper ()
