@@ -7,6 +7,12 @@
        (goto-char ,saved-point)
        retval)))
 
+(defun mines-replace-char (char face)
+  (mines-save-point
+   (delete-char 1)
+   (insert char)
+   (put-text-property (- (point) 1) (point) 'font-lock-face face)))
+
 (defun mines-make-field ()
   (let* ((py (mines-point-y))
          (px (mines-point-x))
@@ -138,16 +144,15 @@
 ;; needs 1d
 (defun mines-sweep-empty ()
   (let ((buffer-read-only nil))
-    (save-excursion
-      (delete-char 1)
-      (let ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
-                        mines-bomb-char
-                      (mines-neighbor-count))))
-        (insert (cond ((equal retval mines-bomb-char) mines-bomb-char)
-                      ((equal retval 0) mines-zero-char)
-                      (t (+ 48 retval))))
-        (put-text-property (- (point) 1) (point) 'font-lock-face
-                           (if (eq retval mines-bomb-char) 'mines-bomb 'mines-num))
+    (mines-save-point
+      (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
+                         mines-bomb-char
+                       (mines-neighbor-count)))
+             (char (cond ((equal retval mines-bomb-char) mines-bomb-char)
+                         ((equal retval 0) mines-zero-char)
+                         (t (+ 48 retval))))
+             (face (if (eq retval mines-bomb-char) 'mines-bomb 'mines-num)))
+        (mines-replace-char char face)
         retval))))
 
 ;; ((= new-char mines-bomb-char)
@@ -193,14 +198,8 @@
    (let ((buffer-read-only nil)
          (char (char-after)))
      (cond
-      ((equal char mines-empty-char)
-       (delete-char 1)
-       (insert mines-flag-char)
-       (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-flag))
-      ((equal char mines-flag-char)
-       (delete-char 1)
-       (insert mines-empty-char)
-       (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-empty))))))
+      ((equal char mines-empty-char) (mines-replace-char mines-flag-char 'mines-flag))
+      ((equal char mines-flag-char) (mines-replace-char mines-empty-char 'mines-empty))))))
 
 (defvar mines-mode-map
   (let ((map (make-sparse-keymap)))
