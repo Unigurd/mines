@@ -54,10 +54,14 @@
       (aset field pos (aref field last))
       (aset field last tmp)
       mines-board)
+    ;; Set variables
     (setq mines-remaining-fields (- yx mines-mine-num))
     (setq mines-board (plist-put (plist-put mines-board 'arr field)
                                  'saved-pos
-                                 (mines-2d-to-bufpos py px)))))
+                                 (mines-2d-to-bufpos py px)))
+    (setq mines-start-time (current-time))
+    ;; Return the created board
+    mines-board))
 
 (defun mines-point-y ()
   "The line point is over, zero-indexed"
@@ -153,6 +157,7 @@
 (defun mines-new-game (&optional prefix-arg)
   "Starts a new game of minesweeper. If prefix-arg is given it queries for new dimensions and number of mines"
   (interactive (list current-prefix-arg))
+  (setq mines-start-time nil)
   (when prefix-arg
     (let ((new-x (read-minibuffer "Width: " nil))
           (new-y (read-minibuffer "Height: " nil))
@@ -177,11 +182,12 @@
   "Reveals whether there is a mine under point"
   (mines-save-excursion
    (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
-                      (progn (setq mines-remaining-fields nil)
-                             mines-bomb-char)
+                      mines-bomb-char
+                    ;; It's ugly that mines-remaining-fields is set in the definition of retval
                     (when mines-remaining-fields
                       (setq mines-remaining-fields (- mines-remaining-fields 1))
-                      (when (= mines-remaining-fields 0) (princ "You won!")))
+                      (when (= mines-remaining-fields 0)
+                        (setq mines-finish-time (current-time))))
                     (mines-neighbor-count)))
           (char (cond ((equal retval mines-bomb-char) mines-bomb-char)
                       ((equal retval 0) mines-zero-char)
@@ -223,7 +229,12 @@
     (setq mines-start-time (current-time)))
   (cond
    ((equal (char-after) mines-empty-char) (mines-sweep-empties))
-   ((<= #x31 (char-after) #x39) (mines-sweep-neighbors))))
+   ((<= #x31 (char-after) #x39) (mines-sweep-neighbors)))
+  (when mines-finish-time
+    (let ((time (time-subtract mines-finish-time mines-start-time)))
+      (princ (format-time-string "%s.%3N" time)))
+    (setq mines-finish-time nil
+          mines-remaining-fields nil)))
 
 (defun mines-flag-single (&optional on-off)
   "If on-off is 'on' it places a flag under point. If it is 'off' it removes the flag under point. If on-off is anything else, it toggles the flag."
@@ -240,19 +251,18 @@
   "Toggle the flag under point. If used on a number it will place flags in all empty neighboring spaces, unless they're all filled with flags, in which case it will remove them."
   (interactive)
   (mines-save-excursion
-   (cond
-    ((or (equal (char-after) mines-empty-char)
-         (equal (char-after) mines-flag-char))
-     (mines-flag-single))
-    ((<= 49 (char-after) 57)
-     (let ((empties 0)
-           (toggle 'on))
-       (mines-do-neighbors
-        (when (equal (char-after) mines-empty-char)
-          (setq empties (+ 1 empties))))
-       (when (= 0 empties) (setq toggle 'off))
-       (mines-do-neighbors
-        (mines-flag-single toggle)))))))
+   (cond ((or (equal (char-after) mines-empty-char)
+              (equal (char-after) mines-flag-char))
+          (mines-flag-single))
+         ((<= 49 (char-after) 57)
+          (let ((empties 0)
+                (toggle 'on))
+            (mines-do-neighbors
+             (when (equal (char-after) mines-empty-char)
+               (setq empties (+ 1 empties))))
+            (when (= 0 empties) (setq toggle 'off))
+            (mines-do-neighbors
+             (mines-flag-single toggle)))))))
 
 (defvar mines-mode-map
   (let ((map (make-sparse-keymap)))
@@ -278,7 +288,8 @@
   (set (make-local-variable 'mines-flag-char) ?f)
   (set (make-local-variable 'mines-remaining-fields) nil)
   (set (make-local-variable 'mines-start) 'safe-neighbors)
-  (make-local-variable 'mines-start-time))
+  (make-local-variable 'mines-start-time)
+  (set (make-local-variable 'mines-finish-time) nil))
 
 (defun minesweeper ()
   "Play minesweeper!"
