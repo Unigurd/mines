@@ -49,11 +49,12 @@
     ;; isn't a mine
     (let* ((pos (mines-2d-to-arrpos py px))
            (tmp (aref field pos))
-           (last (- (* mines-max-y mines-max-x) 1)))
+           (last (- yx 1)))
 
       (aset field pos (aref field last))
       (aset field last tmp)
       mines-board)
+    (setq mines-remaining-fields (- yx mines-mine-num))
     (setq mines-board (plist-put (plist-put mines-board 'arr field)
                                  'saved-pos
                                  (mines-2d-to-bufpos py px)))))
@@ -176,7 +177,11 @@
   "Reveals whether there is a mine under point"
   (mines-save-excursion
    (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
-                      mines-bomb-char
+                      (progn (setq mines-remaining-fields nil)
+                             mines-bomb-char)
+                    (when mines-remaining-fields
+                      (setq mines-remaining-fields (- mines-remaining-fields 1))
+                      (when (= mines-remaining-fields 0) (princ "You won!")))
                     (mines-neighbor-count)))
           (char (cond ((equal retval mines-bomb-char) mines-bomb-char)
                       ((equal retval 0) mines-zero-char)
@@ -243,7 +248,6 @@
      (let ((empties 0)
            (toggle 'on))
        (mines-do-neighbors
-        (princ (point))
         (when (equal (char-after) mines-empty-char)
           (setq empties (+ 1 empties))))
        (when (= 0 empties) (setq toggle 'off))
@@ -272,7 +276,7 @@
   (set (make-local-variable 'mines-zero-char) ?\s)
   (set (make-local-variable 'mines-bomb-char) ?X)
   (set (make-local-variable 'mines-flag-char) ?f)
-  (set (make-local-variable 'mines-remaining-mines) nil)
+  (set (make-local-variable 'mines-remaining-fields) nil)
   (set (make-local-variable 'mines-start) 'safe-neighbors)
   (make-local-variable 'mines-start-time))
 
