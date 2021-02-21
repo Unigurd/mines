@@ -11,10 +11,12 @@
 (defun mines-replace-char (char face)
   "replaces whatever point is over with char and sets face as the font-lock-face. Works in read-only buffers."
   (mines-save-excursion
-   (let ((buffer-read-only nil))
+   (let ((buffer-read-only nil)
+         (mouse-face (get-text-property (point) 'mouse-face)))
      (delete-char 1)
      (insert char)
-     (put-text-property (- (point) 1) (point) 'font-lock-face face))))
+     (put-text-property (- (point) 1) (point) 'font-lock-face face)
+     (put-text-property (- (point) 1) (point) 'mouse-face mouse-face))))
 
 (defun mines-make-field ()
   "Makes a playing field for minesweeper"
@@ -122,8 +124,8 @@
      (reverse acclist))))
 
 (defun mines-reduce-neighbors (f initval)
-    "Reduces over the neighbors and sets point accordingly. The reducing function f only takes the accumulator argument as it is meant to read poitn"
-    (mines-save-excursion
+  "Reduces over the neighbors and sets point accordingly. The reducing function f only takes the accumulator argument as it is meant to read poitn"
+  (mines-save-excursion
    (let ((acc initval))
      (mines-do-neighbors (setq acc (funcall f acc)))
      acc)))
@@ -141,10 +143,15 @@
   (mines-save-excursion
    (let ((buffer-read-only nil))
      (dotimes (i (* mines-max-y mines-max-x))
-       (if (and (/= 0 i) (= 0 (mod i mines-max-x)))
-           (newline))
+       (when (and (/= 0 i) (= 0 (mod i mines-max-x)))
+         (newline)
+         (put-text-property (- (point) 1) (point) 'mouse-face 'mines-newline))
        (insert mines-empty-char)
-       (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-empty)))))
+       (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-empty)
+       (put-text-property (- (point) 1) (point) 'mouse-face
+                          (if (evenp i) 'mines-mouse-1 'mines-mouse-2)))
+     (newline)
+     (put-text-property (- (point) 1) (point) 'mouse-face 'mines-newline))))
 
 (defun mines-retry (&optional prefix-arg)
   "Retries the same field again. Restores point to where it was when this field was first tried unless the prefix argument is specified."
@@ -182,7 +189,8 @@
   "Reveals whether there is a mine under point"
   (mines-save-excursion
    (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
-                      mines-bomb-char
+                      (progn (setq mines-remaining-fields nil)
+                             mines-bomb-char)
                     ;; It's ugly that mines-remaining-fields is set in the definition of retval
                     (when mines-remaining-fields
                       (setq mines-remaining-fields (- mines-remaining-fields 1))
@@ -229,10 +237,10 @@
     (setq mines-start-time (current-time)))
   (cond
    ((equal (char-after) mines-empty-char) (mines-sweep-empties))
-   ((<= #x31 (char-after) #x39) (mines-sweep-neighbors)))
-  (when mines-finish-time
+   ((and (char-after) (<= #x31 (char-after) #x39)) (mines-sweep-neighbors)))
+  (when (and mines-finish-time (= 0 mines-remaining-fields))
     (let ((time (time-subtract mines-finish-time mines-start-time)))
-      (princ (format-time-string "%s.%3N" time)))
+      (princ (format-time-string "hej %s.%3N" time)))
     (setq mines-finish-time nil
           mines-remaining-fields nil)))
 
@@ -264,6 +272,26 @@
             (mines-do-neighbors
              (mines-flag-single toggle)))))))
 
+(defun mines-mousify (f event)
+  (let ((mouse-point (posn-point (event-end event))))
+    (when mouse-point
+      (mines-save-excursion
+       (with-current-buffer "Minesweeper"
+         (goto-char mouse-point)
+         (funcall f))))))
+
+(defun mines-sweep-mouse (event)
+  (interactive "e")
+  (mines-mousify 'mines-sweep event))
+
+(defun mines-flag-mouse (event)
+  (interactive "e")
+  (mines-mousify 'mines-flag event))
+
+(defun mines-new-game-mouse (event)
+  (interactive "e")
+  (mines-mousify 'mines-new-game event))
+
 (defvar mines-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map special-mode-map)
@@ -271,6 +299,16 @@
     (define-key map (kbd "`") 'mines-flag)
     (define-key map (kbd "C-c r") 'mines-retry)
     (define-key map (kbd "C-c n") 'mines-new-game)
+    (define-key map (kbd "<mouse-1>") 'mines-sweep-mouse)
+    (define-key map (kbd "<drag-mouse-1>") 'mines-sweep-mouse)
+    (define-key map (kbd "<down-mouse-1>") 'ignore)
+    (define-key map (kbd "<mouse-3>") 'mines-flag-mouse)
+    (define-key map (kbd "<drag-mouse-3>") 'mines-flag-mouse)
+    (define-key map (kbd "<down-mouse-3>") 'ignore)
+    (define-key map (kbd "<mouse-2>") 'ignore)
+    (define-key map (kbd "<down-mouse-2>") 'ignore)
+    (define-key map (kbd "<double-down-mouse-2>") 'mines-new-game-mouse)
+
     map))
 
 (define-derived-mode mines-mode special-mode "Minesweeper"
@@ -303,12 +341,26 @@
           (lambda () (define-key evil-normal-state-local-map (kbd "SPC") 'mines-sweep)))
 (add-hook 'mines-mode-hook
           (lambda () (define-key evil-normal-state-local-map (kbd "<tab>") 'mines-flag)))
+(add-hook 'mines-mode-hook
+          (lambda () (define-key evil-normal-state-local-map (kbd "<down-mouse-1>") 'ignore)))
+(add-hook 'mines-mode-hook
+          (lambda () (define-key evil-normal-state-local-map (kbd "<mouse-2>") 'ignore)))
+
 
 (defface mines-bomb '((t . (:foreground "red")))
-  " face of the bombs in minesweeper")
+  "Face of the bombs in minesweeper")
 (defface mines-flag '((t . (:foreground "yellow")))
-  " face of the flags in minesweeper")
+  "Face of the flags in minesweeper")
 (defface mines-num '((t . nil))
-  " face of the numbers and empty spaces in minesweeper")
+  "Face of the numbers and empty spaces in minesweeper")
 (defface mines-empty '((t . nil))
   "Face of the unexplored spaces in minesweper")
+(defface mines-mouse-1 '((t . (:background "dark gray")))
+  "Face for the field the mouse is hovering over in minesweeper")
+(defface mines-mouse-2 '((t . (:background "dark gray")))
+  "Face for the field the mouse is hovering over in minesweeper")
+
+(defface mines-newline '((t . nil))
+  "")
+
+
