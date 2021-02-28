@@ -3,10 +3,10 @@
 (defmacro mines-save-excursion (&rest excursion)
   "Save-excursion, but restores point to the same numeric value. That is, if text has been deleted before point, point would have moved leftwards when restored by save-excursion but not by mines-save-excursion. That also means it might be restored over different text than it was over when saved."
   (let ((saved-point (make-symbol "saved-point")))
-    `(let ((,saved-point (point))
-           (retval ,(cons 'save-current-buffer excursion)))
-       (goto-char ,saved-point)
-       retval)))
+    `(let ((,saved-point (point)))
+       (unwind-protect
+           ,(cons 'save-current-buffer excursion)
+         (goto-char ,saved-point)))))
 
 (defun mines-replace-char (char face)
   "replaces whatever point is over with char and sets face as the font-lock-face. Works in read-only buffers."
@@ -150,7 +150,7 @@
        (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-empty)
        (put-text-property (- (point) 1) (point) 'mouse-face
                           (if (evenp i) 'mines-mouse-1 'mines-mouse-2)))
-     (newline)
+     (insert-char #x20)
      (put-text-property (- (point) 1) (point) 'mouse-face 'mines-newline))))
 
 (defun mines-retry (&optional prefix-arg)
@@ -232,17 +232,19 @@
 (defun mines-sweep ()
   "Reveal mines"
   (interactive)
-  (unless (plist-get mines-board 'arr)
-    (mines-make-field)
-    (setq mines-start-time (current-time)))
-  (cond
-   ((equal (char-after) mines-empty-char) (mines-sweep-empties))
-   ((and (char-after) (<= #x31 (char-after) #x39)) (mines-sweep-neighbors)))
-  (when (and mines-finish-time (= 0 mines-remaining-fields))
-    (let ((time (time-subtract mines-finish-time mines-start-time)))
-      (princ (format-time-string "hej %s.%3N" time)))
-    (setq mines-finish-time nil
-          mines-remaining-fields nil)))
+  (when (and (< (mines-point-y) mines-max-y) (< (mines-point-x) mines-max-x))
+    (mines-save-excursion
+     (unless (plist-get mines-board 'arr)
+       (mines-make-field)
+       (setq mines-start-time (current-time)))
+     (cond
+      ((equal (char-after) mines-empty-char) (mines-sweep-empties))
+      ((and (char-after) (<= 49 (char-after) 57)) (mines-sweep-neighbors)))
+     (when (and mines-finish-time (= 0 mines-remaining-fields))
+       (let ((time (time-subtract mines-finish-time mines-start-time)))
+         (princ (format-time-string "%s.%3N" time)))
+       (setq mines-finish-time nil
+             mines-remaining-fields nil)))))
 
 (defun mines-flag-single (&optional on-off)
   "If on-off is 'on' it places a flag under point. If it is 'off' it removes the flag under point. If on-off is anything else, it toggles the flag."
@@ -362,5 +364,3 @@
 
 (defface mines-newline '((t . nil))
   "")
-
-
