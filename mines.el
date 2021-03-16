@@ -1,7 +1,34 @@
+;;; mines.el --- Minesweeper
+
+;;; Commentary:
+;;
+
+
+;;; Code:
 (setq lexical-binding t)
 
+(eval-when-compile
+  (defvar mines-board)
+  (defvar mines-max-y)
+  (defvar mines-max-x)
+  (defvar mines-start)
+  (defvar mines-remaining-fields)
+  (defvar mines-mine-num)
+  (defvar mines-start-time)
+  (defvar mines-finish-time)
+  (defvar mines-empty-char)
+  (defvar mines-zero-char)
+  (defvar mines-bomb-char)
+  (defvar mines-flag-char))
+
+
 (defmacro mines-save-excursion (&rest excursion)
-  "Save-excursion, but restores point to the same numeric value. That is, if text has been deleted before point, point would have moved leftwards when restored by save-excursion but not by mines-save-excursion. That also means it might be restored over different text than it was over when saved."
+  "Save points numeric value and the buffer and execute EXCURSION.
+Like 'Save-excursion', but restore point to the same numeric value.
+That is, if text has been deleted before point, point would have moved
+leftwards when restored by 'save-excursion' but not by
+'mines-save-excursion'. That also means it might be restored over
+different text than it was over when saved."
   (let ((saved-point (make-symbol "saved-point")))
     `(let ((,saved-point (point)))
        (unwind-protect
@@ -9,7 +36,8 @@
          (goto-char ,saved-point)))))
 
 (defun mines-replace-char (char face)
-  "replaces whatever point is over with char and sets face as the font-lock-face. Works in read-only buffers."
+  "Replace whatever point is over with CHAR and set FACE as the font-lock-face.
+Works in read-only buffers."
   (mines-save-excursion
    (let ((buffer-read-only nil)
          (mouse-face (get-text-property (point) 'mouse-face)))
@@ -19,7 +47,7 @@
      (put-text-property (- (point) 1) (point) 'mouse-face mouse-face))))
 
 (defun mines-make-field ()
-  "Makes a playing field for minesweeper"
+  "Make a playing field for minesweeper."
   (let* ((py (mines-point-y))
          (px (mines-point-x))
          (field (make-bool-vector (* mines-max-y mines-max-x) nil))
@@ -66,35 +94,39 @@
     mines-board))
 
 (defun mines-point-y ()
-  "The line point is over, zero-indexed"
+  "The line that point is over, zero-indexed."
   (/ (- (point) 1) (+ mines-max-x 1)))
 
 (defun mines-point-x ()
-  "The column point is in, zero-indexed"
+  "The column that point is in, zero-indexed."
   (mod (- (point) 1) (+ mines-max-x 1)))
 ;; Could use point
 
 (defun mines-2d-to-arrpos (y x)
-  "Converts 2d coordinates to the same position in the flattened version of the array"
+  "Convert 2d coordinates Y and X to the same position in the flattened version of the array."
   (+ (* y mines-max-x) x))
 
 ;; adds one to max-x to account for newlines before point in the buffer
 (defun mines-2d-to-bufpos (y x)
+  "Convert Y and X coordinates to a point in the mines buffer.
+Differs from 'mines-2d-to-arrpos' in that it needs to take the newline
+in each line into account"
   (+ x (* y (+ 1 mines-max-x)) 1))
 
 ;; Should it use (plist-get 'arr)?
 (defun mines-aset (field y x newelt)
-  "Sets position (y,x) row-major in the array in property arr of the plist field to newelt"
+  "Set position (Y,X) row-major in the array in property arr of the plist FIELD to NEWELT."
   (aset (plist-get field 'arr) (mines-2d-to-arrpos y x) newelt))
 
 ;; Should it use (plist-get 'arr)?
 
 (defun mines-aref (field y x)
-  "Returns the value at position (y,x) row-major in the array in property arr of the plist field"
+  "Return the value at position (Y,X) row-major in the array in property arr of the plist FIELD."
   (aref (plist-get field 'arr) (mines-2d-to-arrpos y x)))
 
 (defun mines-neighbor-indices ()
-  "Returns the indices of the valid neighbors of point. Indices are of the form (y . x)"
+  "Return the indices of the valid neighbors of point.
+Indices are of the form (y . x)"
   (let* ((y (mines-point-y))
          (x (mines-point-x))
          (yp (+ y 1)) (ym (- y 1))
@@ -109,7 +141,7 @@
                 all-indices)))
 
 (defmacro mines-do-neighbors (&rest body)
-  "Loops over the neighbors and sets point accordingly."
+  "Loop over the neighbors with point set accordingly and execute BODY."
   (let ((yx (make-symbol "yx")))
     `(mines-save-excursion
       (dolist (,yx (mines-neighbor-indices))
@@ -117,21 +149,24 @@
         ,(cons 'progn body)))))
 
 (defun mines-map-neighbors (f)
-  "Maps over the neighbors and sets point accordingly. The mapping function f takes no argument as it is meant to read point."
+  "Map over the neighbors and set point accordingly.
+The mapping function F takes no argument as it is meant to read what's at point."
   (mines-save-excursion
    (let ((acclist nil))
      (mines-do-neighbors (setq acclist (cons (funcall f) acclist)))
      (reverse acclist))))
 
 (defun mines-reduce-neighbors (f initval)
-  "Reduces over the neighbors and sets point accordingly. The reducing function f only takes the accumulator argument as it is meant to read poitn"
+  "Reduce over the neighbors and set point accordingly.
+The reducing function F only takes the accumulator argument as it is
+meant to read what's at point. The first call to F uses INITVAL as its argument"
   (mines-save-excursion
    (let ((acc initval))
      (mines-do-neighbors (setq acc (funcall f acc)))
      acc)))
 
 (defun mines-neighbor-count ()
-  "Returns the number of neighboring mines"
+  "Return the number of neighboring mines."
   (mines-reduce-neighbors
    (lambda (acc)
      (+ acc (if (mines-aref mines-board (mines-point-y) (mines-point-x))
@@ -139,7 +174,7 @@
    0))
 
 (defun mines-draw-field ()
-  "Draws an empty minesweeper field"
+  "Draw an empty minesweeper field."
   (mines-save-excursion
    (let ((buffer-read-only nil))
      (dotimes (i (* mines-max-y mines-max-x))
@@ -154,7 +189,8 @@
      (put-text-property (- (point) 1) (point) 'mouse-face 'mines-newline))))
 
 (defun mines-retry (&optional prefix-arg)
-  "Retries the same field again. Restores point to where it was when this field was first tried unless the prefix argument is specified."
+  "Retry the same field again.
+Restore point to where it was when this field was first tried unless the PREFIX-ARG  is specified."
   (interactive (list current-prefix-arg))
   (let ((saved-pos (if prefix-arg (point) (plist-get mines-board 'saved-pos))))
     (let ((buffer-read-only nil)) (erase-buffer))
@@ -162,7 +198,8 @@
     (goto-char saved-pos)))
 
 (defun mines-new-game (&optional prefix-arg)
-  "Starts a new game of minesweeper. If prefix-arg is given it queries for new dimensions and number of mines"
+  "Start a new game of minesweeper.
+If PREFIX-ARG is given, 'mines-new-game' queries for new dimensions and number of mines."
   (interactive (list current-prefix-arg))
   (setq mines-start-time nil)
   (when prefix-arg
@@ -186,7 +223,7 @@
   (plist-put mines-board 'arr nil))
 
 (defun mines-sweep-empty ()
-  "Reveals whether there is a mine under point"
+  "Reveal whether there is a mine at point."
   (mines-save-excursion
    (let* ((retval (if (mines-aref mines-board (mines-point-y) (mines-point-x))
                       (progn (setq mines-remaining-fields nil)
@@ -205,7 +242,8 @@
      retval)))
 
 (defun mines-sweep-empties ()
-  "Reveals whether there is a mine under point. If there are no neighboring mines, it also reveals those the neighbors, and continues to do so iteratively"
+  "Reveal whether there is a mine at point.
+If there are no neighboring mines, it also reveals the neighbors, and continues to do so iteratively."
   (mines-save-excursion
    (let ((indices `((,(mines-point-y) . ,(mines-point-x)))))
      (while (consp indices)
@@ -218,7 +256,8 @@
 
 
 (defun mines-sweep-neighbors ()
-  "Reveals mines under all neighbors if used on a number and the right number of flags is set (or bombs revealed)."
+  "Reveal mines under all neighbors.
+Does nothing if the right amount of neighboring flags are set + neighboring bombs aren't revealed."
   (mines-save-excursion
    (let ((flag-count (mines-reduce-neighbors
                       (lambda (acc)
@@ -230,7 +269,7 @@
          (mines-map-neighbors #'mines-sweep-empties)))))
 
 (defun mines-sweep ()
-  "Reveal mines"
+  "Reveal mines."
   (interactive)
   (when (and (< (mines-point-y) mines-max-y) (< (mines-point-x) mines-max-x))
     (mines-save-excursion
@@ -247,7 +286,9 @@
              mines-remaining-fields nil)))))
 
 (defun mines-flag-single (&optional on-off)
-  "If on-off is 'on' it places a flag under point. If it is 'off' it removes the flag under point. If on-off is anything else, it toggles the flag."
+  "If ON-OFF is 'on', place a flag under point.
+If it is 'off', remove the flag under point.
+If ON-OFF is anything else, toggle the flag."
   (interactive)
   (mines-save-excursion
    (let ((char (char-after)))
@@ -275,6 +316,8 @@
              (mines-flag-single toggle)))))))
 
 (defun mines-mousify (f event)
+  "Move point temporarily to the mouse and perform F.
+EVENT is used to get the position of the mouse."
   (let ((mouse-point (posn-point (event-end event))))
     (when mouse-point
       (mines-save-excursion
@@ -283,14 +326,20 @@
          (funcall f))))))
 
 (defun mines-sweep-mouse (event)
+  "Execute 'mines-sweep' at the mouse's position.
+EVENT is used to get the position."
   (interactive "e")
   (mines-mousify 'mines-sweep event))
 
 (defun mines-flag-mouse (event)
+  "Execute 'mines-flag' at the mouse's position.
+EVENT is used to get the position."
   (interactive "e")
   (mines-mousify 'mines-flag event))
 
 (defun mines-new-game-mouse (event)
+  "Execute 'mines-new-game' with a mouse click.
+EVENT is needed for mouse-commands, I think, but unneeded here."
   (interactive "e")
   (mines-mousify 'mines-new-game event))
 
@@ -353,7 +402,7 @@
   "Face of the bombs in minesweeper")
 (defface mines-flag '((t . (:foreground "yellow")))
   "Face of the flags in minesweeper")
-(defface mines-num '((t . nil))
+(defface mines-num '((t . (:background "#222222")))
   "Face of the numbers and empty spaces in minesweeper")
 (defface mines-empty '((t . nil))
   "Face of the unexplored spaces in minesweper")
@@ -364,3 +413,6 @@
 
 (defface mines-newline '((t . nil))
   "")
+
+(provide 'mines)
+;;; mines.el ends here
