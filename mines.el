@@ -388,16 +388,6 @@ EVENT is needed for mouse-commands, I think, but unneeded here."
   (mines-mode)
   (mines-draw-field))
 
-(add-hook 'mines-mode-hook
-          (lambda () (define-key evil-normal-state-local-map (kbd "SPC") 'mines-sweep)))
-(add-hook 'mines-mode-hook
-          (lambda () (define-key evil-normal-state-local-map (kbd "<tab>") 'mines-flag)))
-(add-hook 'mines-mode-hook
-          (lambda () (define-key evil-normal-state-local-map (kbd "<down-mouse-1>") 'ignore)))
-(add-hook 'mines-mode-hook
-          (lambda () (define-key evil-normal-state-local-map (kbd "<mouse-2>") 'ignore)))
-
-
 (defface mines-bomb '((t . (:foreground "red")))
   "Face of the bombs in minesweeper")
 (defface mines-flag '((t . (:foreground "yellow")))
