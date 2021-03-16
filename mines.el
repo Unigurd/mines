@@ -1,8 +1,5 @@
 ;;; mines.el --- Minesweeper
-
 ;;; Commentary:
-;;
-
 
 ;;; Code:
 (setq lexical-binding t)
@@ -21,6 +18,7 @@
   (defvar mines-bomb-char)
   (defvar mines-flag-char))
 
+(require 'cl-lib)
 
 (defmacro mines-save-excursion (&rest excursion)
   "Save points numeric value and the buffer and execute EXCURSION.
@@ -184,7 +182,7 @@ meant to read what's at point. The first call to F uses INITVAL as its argument"
        (insert mines-empty-char)
        (put-text-property (- (point) 1) (point) 'font-lock-face 'mines-empty)
        (put-text-property (- (point) 1) (point) 'mouse-face
-                          (if (evenp i) 'mines-mouse-1 'mines-mouse-2)))
+                          (if (cl-evenp i) 'mines-mouse-1 'mines-mouse-2)))
      (insert-char #x20)
      (put-text-property (- (point) 1) (point) 'mouse-face 'mines-newline))))
 
@@ -247,7 +245,7 @@ If there are no neighboring mines, it also reveals the neighbors, and continues 
   (mines-save-excursion
    (let ((indices `((,(mines-point-y) . ,(mines-point-x)))))
      (while (consp indices)
-       (destructuring-bind (y . x) (car indices)
+       (cl-destructuring-bind (y . x) (car indices)
          (setq indices (cdr indices))
          (goto-char (mines-2d-to-bufpos y x))
          (when (char-equal mines-empty-char (char-after))
