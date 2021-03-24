@@ -31,7 +31,7 @@ different text than it was over when saved."
     `(let ((,saved-point (point)))
        (unwind-protect
            ,(cons 'save-current-buffer excursion)
-         (goto-char ,saved-point)))))
+         (setf (point) ,saved-point)))))
 
 (defun mines-replace-char (char face)
   "Replace whatever point is over with CHAR and set FACE as the font-lock-face.
@@ -143,7 +143,7 @@ Indices are of the form (y . x)"
   (let ((yx (make-symbol "yx")))
     `(mines-save-excursion
       (dolist (,yx (mines-neighbor-indices))
-        (goto-char (mines-2d-to-bufpos (car ,yx) (cdr ,yx)))
+        (setf (point) (mines-2d-to-bufpos (car ,yx) (cdr ,yx)))
         ,(cons 'progn body)))))
 
 (defun mines-map-neighbors (f)
@@ -193,7 +193,7 @@ Restore point to where it was when this field was first tried unless the PREFIX-
   (let ((saved-pos (if prefix-arg (point) (plist-get mines-board 'saved-pos))))
     (let ((buffer-read-only nil)) (erase-buffer))
     (mines-draw-field)
-    (goto-char saved-pos)))
+    (setf (point) saved-pos)))
 
 (defun mines-new-game (&optional prefix-arg)
   "Start a new game of minesweeper.
@@ -247,7 +247,7 @@ If there are no neighboring mines, it also reveals the neighbors, and continues 
      (while (consp indices)
        (cl-destructuring-bind (y . x) (car indices)
          (setq indices (cdr indices))
-         (goto-char (mines-2d-to-bufpos y x))
+         (setf (point) (mines-2d-to-bufpos y x))
          (when (char-equal mines-empty-char (char-after))
            (when (= 0 (mines-sweep-empty))
              (setq indices (append (mines-neighbor-indices) indices)))))))))
@@ -320,7 +320,7 @@ EVENT is used to get the position of the mouse."
     (when mouse-point
       (mines-save-excursion
        (with-current-buffer "Minesweeper"
-         (goto-char mouse-point)
+         (setf (point) mouse-point)
          (funcall f))))))
 
 (defun mines-sweep-mouse (event)
