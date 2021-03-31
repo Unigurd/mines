@@ -1,8 +1,8 @@
 ;;; mines.el --- Minesweeper
 ;;; Commentary:
-
 ;;; Code:
 (setq lexical-binding t)
+
 
 (eval-when-compile
   (defvar mines-board)
@@ -19,6 +19,93 @@
   (defvar mines-flag-char))
 
 (require 'cl-lib)
+
+(defvar mines-scores-file (concat (file-name-directory load-file-name) "mines-scores"))
+(defvar mines-scores nil)
+(defvar mines-scores-buffer "*MineScores*")
+
+(defun mines-time-to-number (time)
+  "Convert TIME to a number."
+  (read (format-time-string "%s.%3N" time)))
+
+(defun mines-insert-sorted (new-score scores)
+  "Insert NEW-SCORE in the sorted list SCORES in-place.
+Return (IDX . NEW-LIST) where IDX is the index of scores in NEW-LIST."
+  (let ((better-scores-count 0)
+        (current-score scores)
+        (previous-score nil))
+    ;; Find where to insert new-score
+    (while (and (not (null current-score))
+                (>= new-score (car current-score)))
+      (setq previous-score current-score)
+      (setq current-score (cdr current-score))
+      (setq better-scores-count (1+ better-scores-count)))
+    ;; Insert new-score
+    (setq current-score (cons new-score current-score))
+    (if previous-score
+        (setcdr previous-score current-score)
+      (setq scores current-score))
+    (cons better-scores-count scores)))
+
+;; Assumes mines-scores-buffer exists
+(defun mines-read-scores ()
+  "Read the scores from MINES-SCORES-BUFFER into MINES-SCORES."
+  (let ((reverse-scores nil))
+    (with-current-buffer mines-scores-buffer
+      (setf (point) 0)
+      (condition-case err
+          (while (< (point) (point-max))
+            (setq reverse-scores (cons (read (get-buffer mines-scores-buffer))
+                                       reverse-scores)))
+        (end-of-file t))
+      (setq mines-scores (reverse reverse-scores)))))
+
+;; Assumes mines-scores-buffer exists and mines-scores is initialized
+(defun mines-save-score (score)
+  "Write SCORE in 'mines-scores-buffer' and save it in 'mines-scores-file'."
+  (unless (buffer-live-p mines-scores-buffer)
+    (mines-load-scores-buffer))
+  (cl-destructuring-bind
+      (idx . scores) (mines-insert-sorted score mines-scores)
+    (setq mines-scores scores)
+    (with-current-buffer mines-scores-buffer
+      (setf (point) 0)
+      (forward-line idx)
+      (insert (format "%s" score))
+      (newline)
+      (write-region (point-min) (point-max) mines-scores-file nil 'dont-display-message))))
+
+;; buffer-modified-p
+;; verify-visited-file-modtime
+(defun mines-load-scores-buffer ()
+  "Open and."
+  (unless (file-exists-p mines-scores-file)
+    (make-empty-file mines-scores-file))
+  (with-current-buffer (get-buffer-create mines-scores-buffer)
+    (erase-buffer)
+    (insert-file-contents mines-scores-file))
+  (mines-read-scores))
+
+
+;;; Files:
+;; If not read:                      if nil
+;;   if exists:
+;;     read
+;;   else
+;;     create
+;; else:
+;;   if updated on disk:
+;;     read
+;;
+;; if garbled:
+;;   report
+;; else:
+;;   add new score to list
+;;   write elm to buffer
+;;   save buffer
+;;   optionally display buffer
+;;   optionally message score
+
 
 (defmacro mines-save-excursion (&rest excursion)
   "Save points numeric value and the buffer and execute EXCURSION.
@@ -277,9 +364,12 @@ Does nothing if the right amount of neighboring flags are set + neighboring bomb
      (cond
       ((equal (char-after) mines-empty-char) (mines-sweep-empties))
       ((and (char-after) (<= 49 (char-after) 57)) (mines-sweep-neighbors)))
+     ;; Win!
      (when (and mines-finish-time (= 0 mines-remaining-fields))
-       (let ((time (time-subtract mines-finish-time mines-start-time)))
-         (princ (format-time-string "%s.%3N" time)))
+       (let* ((tmp-time (time-subtract mines-finish-time mines-start-time))
+              (time (mines-time-to-number tmp-time)))
+         (princ time)
+         (mines-save-score time))
        (setq mines-finish-time nil
              mines-remaining-fields nil)))))
 
@@ -381,6 +471,7 @@ EVENT is needed for mouse-commands, I think, but unneeded here."
 (defun minesweeper ()
   "Play minesweeper!"
   (interactive)
+  (mines-load-scores-buffer)
   (switch-to-buffer "Minesweeper")
   (let ((buffer-read-only nil)) (erase-buffer))
   (mines-mode)
