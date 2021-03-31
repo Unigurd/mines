@@ -28,15 +28,21 @@
   "Convert TIME to a number."
   (read (format-time-string "%s.%3N" time)))
 
-(defun mines-insert-sorted (new-score scores)
+(defun mines-date ()
+  "Get current date in sortable format."
+  (format-time-string "%F" (current-time)))
+
+(defun mines-insert-sorted (new-score scores &optional cmp-fun)
   "Insert NEW-SCORE in the sorted list SCORES in-place.
+CMP-FUN is a binary function used to compare elements.
 Return (IDX . NEW-LIST) where IDX is the index of scores in NEW-LIST."
+  (unless cmp-fun (setq cmp-fun #'<))
   (let ((better-scores-count 0)
         (current-score scores)
         (previous-score nil))
     ;; Find where to insert new-score
     (while (and (not (null current-score))
-                (>= new-score (car current-score)))
+                (funcall cmp-fun (car current-score) new-score))
       (setq previous-score current-score)
       (setq current-score (cdr current-score))
       (setq better-scores-count (1+ better-scores-count)))
@@ -61,17 +67,18 @@ Return (IDX . NEW-LIST) where IDX is the index of scores in NEW-LIST."
       (setq mines-scores (reverse reverse-scores)))))
 
 ;; Assumes mines-scores-buffer exists and mines-scores is initialized
-(defun mines-save-score (score)
-  "Write SCORE in 'mines-scores-buffer' and save it in 'mines-scores-file'."
+(defun mines-save-score (score date)
+  "Write SCORE and DATE in 'mines-scores-buffer' and save it in 'mines-scores-file'."
   (unless (buffer-live-p mines-scores-buffer)
     (mines-load-scores-buffer))
   (cl-destructuring-bind
-      (idx . scores) (mines-insert-sorted score mines-scores)
+      (idx . scores) (mines-insert-sorted (list score date) mines-scores
+                                          (lambda (a b) (< (car a) (car b))))
     (setq mines-scores scores)
     (with-current-buffer mines-scores-buffer
       (setf (point) 0)
       (forward-line idx)
-      (insert (format "%s" score))
+      (insert (format "%s" (list score date)))
       (newline)
       (write-region (point-min) (point-max) mines-scores-file nil 'dont-display-message))))
 
@@ -369,7 +376,7 @@ Does nothing if the right amount of neighboring flags are set + neighboring bomb
        (let* ((tmp-time (time-subtract mines-finish-time mines-start-time))
               (time (mines-time-to-number tmp-time)))
          (princ time)
-         (mines-save-score time))
+         (mines-save-score time (mines-date)))
        (setq mines-finish-time nil
              mines-remaining-fields nil)))))
 
