@@ -32,6 +32,46 @@
   "Get current date in sortable format."
   (format-time-string "%F" (current-time)))
 
+(defun mines-traverse-tree (tree &rest branch-vals)
+  "Traverse list of lists TREE.
+Each branch is chosen if the first element (a number) matches each
+  element of BRANCH-VALS. each list must be sorted by their first
+  element. If no sub-tree matches an element of BRANCH-VALS, a new
+  subtree is created that matches."
+  ;; We always examine the subtree in the cdr of each node, so we can
+  ;; overwrite it to insert a new subtree. So we add a dummy element
+  ;; to the front of tree so we can examine the real first node as the
+  ;; cdr of the dummy node. When going into a sublist, they all start
+  ;; with the number used to choose them, so they don't need a dummy
+  ;; element.
+  (let* ((whole-tree (cons nil tree))
+         (work-tree whole-tree))
+    ;; Loop over each chosen subtree
+    (while branch-vals
+      (let ((next-tree nil)
+            (branch-val (car branch-vals)))
+        ;; Examine subtrees in the current list
+        (while (and (not next-tree) work-tree)
+          ;; If there are no more subtrees to examine, or BRANCH-VAL
+          ;; is larger than the car of the rest of the subtrees,
+          ;; create a new subtree beginning with BRANCH-VAL and insert it.
+          (cond ((or (null (cdr work-tree)) (< branch-val (caadr work-tree)))
+                 (let ((new-sub-tree (cons (list branch-val) (cdr work-tree))))
+                   (setf (cdr work-tree) new-sub-tree
+                         next-tree (car new-sub-tree))))
+                ;; Choose the sub-tree with the car matching BRANCH-VAL.
+                ((= branch-val (caadr work-tree))
+                 (setf next-tree (cadr work-tree)))
+                ;; Continue searching the list if the car of the
+                ;; currently examined subtree is too small.
+                ((> branch-val (caadr work-tree))
+                 (setf work-tree (cdr work-tree)))))
+        ;; Prepare for looping through the next sub-tree
+        (setf work-tree next-tree
+              branch-vals (cdr branch-vals))))
+    ;; Remove the dummy element and return the modified tree.
+    (cdr whole-tree)))
+
 (defun mines-insert-sorted (new-score scores &optional cmp-fun)
   "Insert NEW-SCORE in the sorted list SCORES in-place.
 CMP-FUN is a binary function used to compare elements.
