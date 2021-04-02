@@ -76,9 +76,8 @@ Return (IDX . NEW-LIST) where IDX is the index of scores in NEW-LIST."
                                           (lambda (a b) (< (car a) (car b))))
     (setq mines-scores scores)
     (with-current-buffer mines-scores-buffer
-      (setf (point) 0)
-      (forward-line idx)
-      (insert (format "%s" (list score date)))
+      (delete-region (point-min) (point-max))
+      (princ mines-scores (get-buffer mines-scores-buffer))
       (newline)
       (write-region (point-min) (point-max) mines-scores-file nil 'dont-display-message))))
 
