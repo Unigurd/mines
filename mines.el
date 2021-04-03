@@ -32,13 +32,12 @@
   "Get current date in sortable format."
   (format-time-string "%F" (current-time)))
 
-(defun mines-traverse-tree (tree &rest branch-vals)
-  "Traverse list of lists TREE.
-Each branch is chosen if the first element (a number) matches each
-  element of BRANCH-VALS. each list must be sorted by their first
-  element. If no sub-tree matches an element of BRANCH-VALS, a new
-  subtree is created that matches."
-  ;; We always examine the subtree in the cdr of each node, so we can
+(defun mines-traverse-tree-aux (tree &rest branch-vals)
+  "Auxiliary function used for traversal of trees.
+Search through TREE by finding lists starting with each of
+  BRANCH-VALS. Differs from 'mines-traverse-tree in that it also
+  returns the head of the list, i.e. the 'branch-val'."
+  ;; We always examine the subtree in the cdr of each node so we can
   ;; overwrite it to insert a new subtree. So we add a dummy element
   ;; to the front of tree so we can examine the real first node as the
   ;; cdr of the dummy node. When going into a sublist, they all start
@@ -70,7 +69,24 @@ Each branch is chosen if the first element (a number) matches each
         (setf work-tree next-tree
               branch-vals (cdr branch-vals))))
     ;; Remove the dummy element and return the modified tree.
-    (cdr whole-tree)))
+    work-tree))
+
+(defun mines-traverse-tree (tree &rest branch-vals)
+  "Traverse list of lists TREE.
+Each branch is chosen if the first element (a number) matches each
+  element of BRANCH-VALS. each list must be sorted by their first
+  element. If no sub-tree matches an element of BRANCH-VALS, a new
+  subtree is created that matches."
+  (cdr (apply #'mines-traverse-tree-aux tree branch-vals)))
+
+(defun mines-traverse-tree-set (val tree &rest branch-vals)
+  "Traverse TREE by BRANCH-VALS and set the value found therein to VAL.
+The setter registered with 'setf' to pair with mines-traverse-tree."
+  (setf (cdr (apply #'mines-traverse-tree-aux tree branch-vals)) val))
+
+(gv-define-setter mines-traverse-tree
+    (val tree &rest branch-vals)
+  `(apply #'mines-traverse-tree-set ,val ,tree (quote ,branch-vals)))
 
 (defun mines-insert-sorted (new-score scores &optional cmp-fun)
   "Insert NEW-SCORE in the sorted list SCORES in-place.
