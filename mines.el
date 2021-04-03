@@ -3,7 +3,6 @@
 ;;; Code:
 (setq lexical-binding t)
 
-
 (eval-when-compile
   (defvar mines-board)
   (defvar mines-max-y)
@@ -35,41 +34,39 @@
 (defun mines-traverse-tree-aux (tree &rest branch-vals)
   "Auxiliary function used for traversal of trees.
 Search through TREE by finding lists starting with each of
-  BRANCH-VALS. Differs from 'mines-traverse-tree in that it also
-  returns the head of the list, i.e. the 'branch-val'."
+BRANCH-VALS. Differs from 'mines-traverse-tree in that it also
+returns the head of the list, i.e. the 'branch-val'.
+Needs a dummy element prepended to the front of the list since it
+might prepend to the tree and needs to return the found leaf."
   ;; We always examine the subtree in the cdr of each node so we can
-  ;; overwrite it to insert a new subtree. So we add a dummy element
-  ;; to the front of tree so we can examine the real first node as the
-  ;; cdr of the dummy node. When going into a sublist, they all start
-  ;; with the number used to choose them, so they don't need a dummy
-  ;; element.
-  (let* ((whole-tree (cons nil tree))
-         (work-tree whole-tree))
-    ;; Loop over each chosen subtree
-    (while branch-vals
-      (let ((next-tree nil)
-            (branch-val (car branch-vals)))
-        ;; Examine subtrees in the current list
-        (while (and (not next-tree) work-tree)
-          ;; If there are no more subtrees to examine, or BRANCH-VAL
-          ;; is larger than the car of the rest of the subtrees,
-          ;; create a new subtree beginning with BRANCH-VAL and insert it.
-          (cond ((or (null (cdr work-tree)) (< branch-val (caadr work-tree)))
-                 (let ((new-sub-tree (cons (list branch-val) (cdr work-tree))))
-                   (setf (cdr work-tree) new-sub-tree
-                         next-tree (car new-sub-tree))))
-                ;; Choose the sub-tree with the car matching BRANCH-VAL.
-                ((= branch-val (caadr work-tree))
-                 (setf next-tree (cadr work-tree)))
-                ;; Continue searching the list if the car of the
-                ;; currently examined subtree is too small.
-                ((> branch-val (caadr work-tree))
-                 (setf work-tree (cdr work-tree)))))
-        ;; Prepare for looping through the next sub-tree
-        (setf work-tree next-tree
-              branch-vals (cdr branch-vals))))
-    ;; Remove the dummy element and return the modified tree.
-    work-tree))
+  ;; overwrite it to insert a new subtree. So tree has a dummy element added
+  ;; to the front of tree at the call site so we can examine the real
+  ;; first node as the cdr of the dummy node. When going into a
+  ;; sublist, they all start with the number used to choose them, so
+  ;; they don't need a dummy element.
+  (while branch-vals
+    (let ((next-tree nil)
+          (branch-val (car branch-vals)))
+      ;; Examine subtrees in the current list
+      (while (and (not next-tree) tree)
+        ;; If there are no more subtrees to examine, or BRANCH-VAL
+        ;; is larger than the car of the rest of the subtrees,
+        ;; create a new subtree beginning with BRANCH-VAL and insert it.
+        (cond ((or (null (cdr tree)) (< branch-val (caadr tree)))
+               (let ((new-sub-tree (cons (list branch-val) (cdr tree))))
+                 (setf (cdr tree) new-sub-tree
+                       next-tree (car new-sub-tree))))
+              ;; Choose the sub-tree with the car matching BRANCH-VAL.
+              ((= branch-val (caadr tree))
+               (setf next-tree (cadr tree)))
+              ;; Continue searching the list if the car of the
+              ;; currently examined subtree is too small.
+              ((> branch-val (caadr tree))
+               (setf tree (cdr tree)))))
+      ;; Prepare for looping through the next sub-tree
+      (setf tree next-tree
+            branch-vals (cdr branch-vals))))
+  tree)
 
 (defun mines-traverse-tree (tree &rest branch-vals)
   "Traverse list of lists TREE.
@@ -77,21 +74,22 @@ Each branch is chosen if the first element (a number) matches each
   element of BRANCH-VALS. each list must be sorted by their first
   element. If no sub-tree matches an element of BRANCH-VALS, a new
   subtree is created that matches."
-  (cdr (apply #'mines-traverse-tree-aux tree branch-vals)))
+  (cdr (apply #'mines-traverse-tree-aux (cons nil tree) branch-vals)))
 
 (defun mines-traverse-tree-set (val tree &rest branch-vals)
   "Traverse TREE by BRANCH-VALS and set the value found therein to VAL.
-The setter registered with 'setf' to pair with mines-traverse-tree."
-  (setf (cdr (apply #'mines-traverse-tree-aux tree branch-vals)) val))
+The setter registered with 'setf' to pair with mines-traverse-tree.
+Return the modified tree."
+  (let ((wrapped-tree (cons nil tree)))
+    (setf (cdr (apply #'mines-traverse-tree-aux wrapped-tree branch-vals)) val)
+    (cdr wrapped-tree)))
 
-(gv-define-setter mines-traverse-tree
-    (val tree &rest branch-vals)
-  `(apply #'mines-traverse-tree-set ,val ,tree (quote ,branch-vals)))
+(gv-define-setter mines-traverse-tree (val tree &rest branch-vals)
+  `(apply #'mines-traverse-tree-set ,val ,tree ,(cons 'list branch-vals)))
 
 (defun mines-insert-sorted (new-score scores &optional cmp-fun)
   "Insert NEW-SCORE in the sorted list SCORES in-place.
-CMP-FUN is a binary function used to compare elements.
-Return (IDX . NEW-LIST) where IDX is the index of scores in NEW-LIST."
+CMP-FUN is a binary function used to compare elements and defaults to <."
   (unless cmp-fun (setq cmp-fun #'<))
   (let ((better-scores-count 0)
         (current-score scores)
@@ -107,67 +105,35 @@ Return (IDX . NEW-LIST) where IDX is the index of scores in NEW-LIST."
     (if previous-score
         (setcdr previous-score current-score)
       (setq scores current-score))
-    (cons better-scores-count scores)))
+    scores))
 
 ;; Assumes mines-scores-buffer exists
 (defun mines-read-scores ()
-  "Read the scores from MINES-SCORES-BUFFER into MINES-SCORES."
-  (let ((reverse-scores nil))
-    (with-current-buffer mines-scores-buffer
-      (setf (point) 0)
-      (condition-case err
-          (while (< (point) (point-max))
-            (setq reverse-scores (cons (read (get-buffer mines-scores-buffer))
-                                       reverse-scores)))
-        (end-of-file t))
-      (setq mines-scores (reverse reverse-scores)))))
+  "Read the scores from `mines-scores-file' into `mines-scores'."
+  (unless (file-exists-p mines-scores-file)
+      (make-empty-file mines-scores-file))
+  (with-temp-buffer
+    (insert-file-contents mines-scores-file)
+    (condition-case nil
+        (setf mines-scores (read (current-buffer)))
+      (error
+       (message "Could not read scores. Creating new scores file.")
+       (setf mines-scores nil)))))
 
 ;; Assumes mines-scores-buffer exists and mines-scores is initialized
 (defun mines-save-score (score date)
-  "Write SCORE and DATE in 'mines-scores-buffer' and save it in 'mines-scores-file'."
-  (unless (buffer-live-p mines-scores-buffer)
-    (mines-load-scores-buffer))
-  (cl-destructuring-bind
-      (idx . scores) (mines-insert-sorted (list score date) mines-scores
-                                          (lambda (a b) (< (car a) (car b))))
-    (setq mines-scores scores)
-    (with-current-buffer mines-scores-buffer
-      (delete-region (point-min) (point-max))
-      (princ mines-scores (get-buffer mines-scores-buffer))
-      (newline)
+  "Add SCORE and DATE to `mines-scores' and save it in `mines-scores-file'."
+  (unless mines-scores
+    (mines-read-scores))
+  (let* ((sub-scores-list (mines-traverse-tree mines-scores mines-max-y mines-max-x mines-mine-num))
+         (scores (mines-insert-sorted (list score date) sub-scores-list
+                                      (lambda (a b) (< (car a) (car b))))))
+    ;; Is this ugly?
+    (setf mines-scores
+          (setf (mines-traverse-tree mines-scores mines-max-y mines-max-x mines-mine-num) scores))
+    (with-temp-buffer
+      (princ mines-scores (current-buffer))
       (write-region (point-min) (point-max) mines-scores-file nil 'dont-display-message))))
-
-;; buffer-modified-p
-;; verify-visited-file-modtime
-(defun mines-load-scores-buffer ()
-  "Open and."
-  (unless (file-exists-p mines-scores-file)
-    (make-empty-file mines-scores-file))
-  (with-current-buffer (get-buffer-create mines-scores-buffer)
-    (erase-buffer)
-    (insert-file-contents mines-scores-file))
-  (mines-read-scores))
-
-
-;;; Files:
-;; If not read:                      if nil
-;;   if exists:
-;;     read
-;;   else
-;;     create
-;; else:
-;;   if updated on disk:
-;;     read
-;;
-;; if garbled:
-;;   report
-;; else:
-;;   add new score to list
-;;   write elm to buffer
-;;   save buffer
-;;   optionally display buffer
-;;   optionally message score
-
 
 (defmacro mines-save-excursion (&rest excursion)
   "Save points numeric value and the buffer and execute EXCURSION.
@@ -533,7 +499,6 @@ EVENT is needed for mouse-commands, I think, but unneeded here."
 (defun minesweeper ()
   "Play minesweeper!"
   (interactive)
-  (mines-load-scores-buffer)
   (switch-to-buffer "Minesweeper")
   (let ((buffer-read-only nil)) (erase-buffer))
   (mines-mode)
