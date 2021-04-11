@@ -29,7 +29,7 @@
 
 (defun mines-date ()
   "Get current date in sortable format."
-  (format-time-string "%F" (current-time)))
+  (make-symbol (format-time-string "%F" (current-time))))
 
 (defun mines-traverse-tree-aux (tree &rest branch-vals)
   "Auxiliary function used for traversal of trees.
