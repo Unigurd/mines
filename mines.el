@@ -15,7 +15,11 @@
   (defvar mines-empty-char)
   (defvar mines-zero-char)
   (defvar mines-bomb-char)
-  (defvar mines-flag-char))
+  (defvar mines-flag-char)
+  (defvar mines-saved-y)
+  (defvar mines-saved-x)
+  (defvar mines-saved-bombs)
+  )
 
 (require 'cl-lib)
 
@@ -134,6 +138,26 @@ CMP-FUN is a binary function used to compare elements and defaults to <."
     (with-temp-buffer
       (princ mines-scores (current-buffer))
       (write-region (point-min) (point-max) mines-scores-file nil 'dont-display-message))))
+
+(defun mines-display-scores ()
+  "Display scores in `mines-scores-buffer."
+  (unless mines-scores
+    (mines-read-scores))
+  (get-buffer-create mines-scores-buffer)
+  (let* ((y mines-max-y)
+         (x mines-max-x)
+         (bombs mines-mine-num)
+         (scores (mines-traverse-tree mines-scores y x bombs)))
+    (with-current-buffer mines-scores-buffer
+      (set (make-local-variable 'mines-saved-y) y)
+      (set (make-local-variable 'mines-saved-x) x)
+      (set (make-local-variable 'mines-saved-bombs) bombs)
+      (delete-region (point-min) (point-max))
+      (linum-mode t)
+      (dolist (entry scores)
+        (princ (format "\t%s\t\t%s\n" (car entry) (cadr entry)) (current-buffer)))))
+  (other-window 1)
+  (switch-to-buffer mines-scores-buffer))
 
 (defmacro mines-save-excursion (&rest excursion)
   "Save points numeric value and the buffer and execute EXCURSION.
